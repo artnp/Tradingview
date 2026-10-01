@@ -7,22 +7,27 @@ f_days(days) => int(days * 86400000.0)
 // ==========================================
 // 1. ส่วนของ MVRVZ (คำนวณเพื่อใช้ระบายสีพื้นหลัง)
 // ==========================================
+mvrv_group = "MVRVZ (On-Chain Zones)"
+show_mvrv  = input.bool(false, "🔴 เปิดใช้งาน MVRVZ Sell/Buy Zone (Glassnode/Coinmetrics)", group=mvrv_group)
+
 period_mvrv        = 104
 top_trigger_val    = 4.55
 bottom_trigger_val = -0.23
 
-stdev_expr = ta.stdev(close, period_mvrv)
-stdev      = request.security("GLASSNODE:BTC_MARKETCAP", "W", stdev_expr, lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
-MC         = request.security("GLASSNODE:BTC_MARKETCAP", "W", close)
-MCR        = request.security("COINMETRICS:BTC_MARKETCAPREAL", "W", close)
+var float MVRVZ = na
 
-MVRVZ = time > timestamp(2010, 5, 10) ? (MC - MCR) / stdev : na
+if show_mvrv
+    // รวม (Bundle) การขอข้อมูล Glassnode [close, stdev] เป็น 1 request เดียว เพื่อประหยัดเวลาเชื่อมต่อ
+    [MC, stdev] = request.security("GLASSNODE:BTC_MARKETCAP", "W", [close, ta.stdev(close, period_mvrv)], lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
+    MCR = request.security("COINMETRICS:BTC_MARKETCAPREAL", "W", close)
+    MVRVZ := (time > timestamp(2010, 5, 10) and not na(stdev) and stdev != 0) ? (MC - MCR) / stdev : na
 
 bkg_color_above = color.new(color.maroon, 50)
 bkg_color_below = color.new(color.rgb(45, 255, 52), 60)
 
-bgcolor(MVRVZ >= top_trigger_val ? bkg_color_above : na, title = "MVRVZ High (Sell Zone)")
-bgcolor(MVRVZ <= bottom_trigger_val ? bkg_color_below : na, title = "MVRVZ Low (Buy Zone)")
+bgcolor(show_mvrv and MVRVZ >= top_trigger_val ? bkg_color_above : na, title = "MVRVZ High (Sell Zone)")
+bgcolor(show_mvrv and MVRVZ <= bottom_trigger_val ? bkg_color_below : na, title = "MVRVZ Low (Buy Zone)")
+
 
 // ==========================================
 // 2. ส่วนของ Crypto Super Cycle (Elliott Wave)
