@@ -1,0 +1,529 @@
+//@version=6
+indicator("Crypto Super Cycle +", overlay=true, max_lines_count=500, max_labels_count=500, max_boxes_count=500)
+
+// ฟังก์ชันสำหรับป้องกัน Integer Overflow เวลาคำนวณวัน
+f_days(days) => int(days * 86400000.0)
+
+// ==========================================
+// 1. ส่วนของ MVRVZ (คำนวณเพื่อใช้ระบายสีพื้นหลัง)
+// ==========================================
+period_mvrv        = 104
+top_trigger_val    = 4.55
+bottom_trigger_val = -0.23
+
+stdev_expr = ta.stdev(close, period_mvrv)
+stdev      = request.security("GLASSNODE:BTC_MARKETCAP", "W", stdev_expr, lookahead=barmerge.lookahead_off, gaps=barmerge.gaps_off)
+MC         = request.security("GLASSNODE:BTC_MARKETCAP", "W", close)
+MCR        = request.security("COINMETRICS:BTC_MARKETCAPREAL", "W", close)
+
+MVRVZ = time > timestamp(2010, 5, 10) ? (MC - MCR) / stdev : na
+
+bkg_color_above = color.new(color.maroon, 50)
+bkg_color_below = color.new(color.rgb(45, 255, 52), 60)
+
+bgcolor(MVRVZ >= top_trigger_val ? bkg_color_above : na, title = "MVRVZ High (Sell Zone)")
+bgcolor(MVRVZ <= bottom_trigger_val ? bkg_color_below : na, title = "MVRVZ Low (Buy Zone)")
+
+// ==========================================
+// 2. ส่วนของ Crypto Super Cycle (Elliott Wave)
+// ==========================================
+RSI_Length      = 14
+RSI_Lower_Level = 30
+Zone_Color      = color.new(#75fbfe, 0)
+
+show_elliott = true
+show_jcurve  = true
+msPerDay     = 86400000 
+
+t_halving_2020 = timestamp("11 May 2020 00:00")
+t_halving_2024 = timestamp("20 Apr 2024 00:00")
+t_halving_2028 = timestamp("25 Mar 2028 00:00")
+t_start_2023   = timestamp("01 Jan 2023 00:00")
+
+var float ath_price_c1 = 0.0
+var int ath_time_c1    = 0
+var float ath_price_c2 = 0.0
+var int ath_time_c2    = 0
+var float ath_price_c3 = 0.0
+var int ath_time_c3    = 0
+
+var float atl_price_c1       = na
+var float atl_price_c2       = na
+var float price_halving_2020 = na
+var float price_halving_2024 = na
+
+// Historical Cycle Peak (ATH) Values
+float c1_ath = 31.91       
+float c2_ath = 1240.0      
+float c3_ath = 19804.0     
+float c4_ath = 68997.0     
+
+if time < t_halving_2020
+    if high > ath_price_c1
+        ath_price_c1 := high
+        ath_time_c1  := time
+if time >= t_halving_2020 and time < t_start_2023
+    if high > ath_price_c2
+        ath_price_c2 := high
+        ath_time_c2  := time
+if time >= t_start_2023
+    if high > ath_price_c3
+        ath_price_c3 := high
+        ath_time_c3  := time
+
+if time >= t_halving_2020 and time[1] < t_halving_2020
+    price_halving_2020 := open
+if time >= t_halving_2024 and time[1] < t_halving_2024
+    price_halving_2024 := open
+
+if time >= timestamp("01 Jan 2018 00:00") and time < t_halving_2020
+    if na(atl_price_c1) or low < atl_price_c1
+        atl_price_c1 := low
+if time >= timestamp("01 Jan 2022 00:00") and time < t_start_2023
+    if na(atl_price_c2) or low < atl_price_c2
+        atl_price_c2 := low
+
+draw_cycle(start_t, start_p, halving_t, is_curr, next_t, next_p, prev_ath) =>
+    if start_p > 0 and start_t > 0
+        t_atl    = start_t + f_days(360)
+        p_atl    = na(prev_ath) or prev_ath <= 0 ? start_p * 0.25 : prev_ath
+        t_target = next_t > 0 ? next_t : start_t + f_days(1081)
+        p_target = next_p > 0 ? next_p : start_p * 1.6
+        
+        if show_elliott
+            t1 = start_t + f_days(45), t2 = t1 + f_days(30), t3 = t2 + f_days(135), t4 = t3 + f_days(60), t5 = t_atl
+            total_drop = start_p - p_atl
+            w1_len     = total_drop * 0.4197 
+            p1 = start_p - w1_len, p2 = p1 + (w1_len * 0.618), p3 = p2 - (w1_len * 1.618), p4 = p3 + ((p2 - p3) * 0.382), p5 = p_atl 
+            line.new(start_t, start_p, t1, p1, xloc=xloc.bar_time, color=color.new(color.red, 40), width=2)
+            line.new(t1, p1, t2, p2, xloc=xloc.bar_time, color=color.new(color.red, 40), width=2)
+            line.new(t2, p2, t3, p3, xloc=xloc.bar_time, color=color.new(color.red, 40), width=2)
+            line.new(t3, p3, t4, p4, xloc=xloc.bar_time, color=color.new(color.red, 40), width=2)
+            line.new(t4, p4, t5, p5, xloc=xloc.bar_time, color=color.new(color.red, 40), width=2, style=line.style_arrow_right)
+            line.new(t_atl, p_atl, t_target, p_target, xloc=xloc.bar_time, color=color.new(color.green, 40), width=2, style=line.style_arrow_right)
+
+        if show_jcurve
+            y1      = math.log(start_p), y2 = math.log(p_atl), y3 = math.log(p_target)
+            x2      = float(t_atl - start_t), x3 = float(t_target - start_t)
+            a_left  = (y1 - y2) / math.pow(x2, 2), a_right = (y3 - y2) / math.pow(x3 - x2, 2)
+            steps   = 40, prev_t = start_t, prev_p = start_p
+            for i = 1 to steps
+                curr_x = x3 * i / steps
+                curr_t = start_t + math.round(curr_x)
+                curr_y = curr_x <= x2 ? (a_left * math.pow(curr_x - x2, 2) + y2) : (a_right * math.pow(curr_x - x2, 2) + y2)
+                curr_p = math.exp(curr_y)
+                l_style = i == steps ? line.style_arrow_right : line.style_solid
+                line.new(prev_t, prev_p, curr_t, curr_p, xloc=xloc.bar_time, color=color.new(color.red, 0), width=4, style=l_style)
+                prev_t := curr_t, prev_p := curr_p
+            
+        label.new(t_target, p_target, is_curr ? "Target ↗" : "Cycle End", xloc=xloc.bar_time, style=label.style_label_left, textcolor=color.red, color=color.new(color.white, 100))
+        label.new(start_t, start_p, "ATH", xloc=xloc.bar_time, style=label.style_label_down, color=color.yellow, textcolor=color.black, size=size.small)
+        
+        drop_pct = math.max(0, math.round((1.0 - p_atl / start_p) * 100))
+        label.new(t_atl, p_atl, "ATL(-" + str.tostring(drop_pct) + "%)", xloc=xloc.bar_time, style=label.style_label_up, textcolor=color.red, color=color.new(color.black, 40), size=size.normal)
+
+draw_handle(halving_t, price_h, elect_year, elect_month, elect_day) =>
+    if not na(price_h)
+        t_elect = timestamp(elect_year, elect_month, elect_day, 0, 0), p_end = price_h * 1.4 
+        line.new(t_elect, 0, t_elect, high, xloc=xloc.bar_time, extend=extend.both, color=color.new(color.blue, 80), style=line.style_dotted)
+        label.new(halving_t, price_h, "หูถ้วย", xloc=xloc.bar_time, style=label.style_label_right, textcolor=color.orange, color=color.new(color.white, 100))
+
+// ==========================================
+// 2.1 Halving Buy/Sell Markers (500 days before/after)
+// ==========================================
+var float price_buy_2020 = na
+var float price_sell_2020 = na
+var float price_buy_2024 = na
+var float price_sell_2024 = na
+var float price_buy_2028 = na
+var float price_sell_2028 = na
+
+t_buy_2020 = t_halving_2020 - f_days(500)
+t_sell_2020 = t_halving_2020 + f_days(500)
+t_buy_2024 = t_halving_2024 - f_days(500)
+t_sell_2024 = t_halving_2024 + f_days(500)
+t_buy_2028 = t_halving_2028 - f_days(500)
+t_sell_2028 = t_halving_2028 + f_days(500)
+
+if time >= t_buy_2020 and na(price_buy_2020)
+    price_buy_2020 := low
+if time >= t_sell_2020 and na(price_sell_2020)
+    price_sell_2020 := high
+
+if time >= t_buy_2024 and na(price_buy_2024)
+    price_buy_2024 := low
+if time >= t_sell_2024 and na(price_sell_2024)
+    price_sell_2024 := high
+
+if time >= t_buy_2028 and na(price_buy_2028)
+    price_buy_2028 := low
+if time >= t_sell_2028 and na(price_sell_2028)
+    price_sell_2028 := high
+
+draw_halving_marker(halving_t, is_buy, price_val) =>
+    if not na(price_val) and price_val > 0
+        target_t = is_buy ? halving_t - f_days(500) : halving_t + f_days(500)
+        
+        // Offset circle price (6% offset for visual clarity)
+        circle_y = is_buy ? price_val * 0.94 : price_val * 1.06
+        circle_color = is_buy ? Zone_Color : color.red
+        
+        // Draw hollow circle label using heavy Unicode character (⭘)
+        label.new(
+             x=target_t,
+             y=circle_y,
+             text="⭘",
+             xloc=xloc.bar_time,
+             style=label.style_none,
+             textcolor=circle_color,
+             size=size.huge
+         )
+        
+        // Draw horizontal connecting line
+        start_x = is_buy ? target_t : halving_t
+        end_x = is_buy ? halving_t : target_t
+        line_y = is_buy ? circle_y * 0.96 : circle_y * 0.94
+        line.new(x1=start_x, y1=line_y, x2=end_x, y2=line_y, xloc=xloc.bar_time, color=color.new(color.white, 50), width=1)
+        
+        // Draw "— 500 days —" label
+        mid_x = start_x + math.round((end_x - start_x) / 2)
+        label_y = line_y * 0.95
+        label.new(x=mid_x, y=label_y, text="— 500 days —", xloc=xloc.bar_time, style=label.style_none, textcolor=color.new(color.white, 30), size=size.small)
+
+is_btc = str.contains(syminfo.ticker, "BTC")
+
+// แสดงผลกับทุกตัวสินทรัพย์
+if barstate.islast
+    // แสดง Elliott Wave / J-Curve cycle เฉพาะ BTC
+    if is_btc
+        draw_cycle(ath_time_c1, ath_price_c1, t_halving_2020, false, ath_time_c2, ath_price_c2, c2_ath)
+        draw_cycle(ath_time_c2, ath_price_c2, t_halving_2024, false, ath_time_c3, ath_price_c3, ath_price_c1)
+        draw_cycle(ath_time_c3, ath_price_c3, t_halving_2028, true, 0, 0.0, ath_price_c2)
+
+    // แสดงเส้นหูถ้วย (Handle) กับทุกตัวสินทรัพย์
+    draw_handle(t_halving_2020, price_halving_2020, 2020, 11, 3)
+    draw_handle(t_halving_2024, price_halving_2024, 2024, 11, 5)
+
+    // Projections for 2028 cycle (future) - คำนวณตามราคาของสินทรัพย์นั้นๆ ตามจริง
+    proj_buy_2028 = close
+    proj_sell_2028 = close * 1.6
+
+    final_buy_2020 = price_buy_2020
+    final_sell_2020 = price_sell_2020
+    final_buy_2024 = price_buy_2024
+    final_sell_2024 = price_sell_2024
+    final_buy_2028 = na(price_buy_2028) ? proj_buy_2028 : price_buy_2028
+    final_sell_2028 = na(price_sell_2028) ? proj_sell_2028 : price_sell_2028
+
+    // Draw buy/sell markers (500 days before/after Halving) - แสดงผลกับทุกตัวสินทรัพย์
+    draw_halving_marker(t_halving_2020, true, final_buy_2020)
+    draw_halving_marker(t_halving_2020, false, final_sell_2020)
+    
+    draw_halving_marker(t_halving_2024, true, final_buy_2024)
+    draw_halving_marker(t_halving_2024, false, final_sell_2024)
+    
+    draw_halving_marker(t_halving_2028, true, final_buy_2028)
+    draw_halving_marker(t_halving_2028, false, final_sell_2028)
+
+// ==========================================
+// 3. Pi Bottom Prediction Formula
+// ==========================================
+show_pi_bottom  = true
+float c5_ath_est = c4_ath + (c4_ath - (na(atl_price_c1) ? 3122.0 : atl_price_c1)) * 2.414
+
+int t_bot1 = timestamp("18 Nov 2011 00:00")
+int t_bot2 = timestamp("14 Jan 2015 00:00")
+int t_bot3 = timestamp("15 Dec 2018 00:00")
+int t_bot4 = timestamp("21 Nov 2022 00:00")
+int t_bot5 = timestamp("01 Dec 2026 00:00")
+
+float PI       = 3.14
+float pi_bot1  = (c1_ath * 0.2) / PI   
+float pi_bot2  = (c2_ath * 0.3) / PI   
+float pi_bot3  = (c3_ath * 0.4) / PI   
+float pi_bot4  = (c4_ath * 0.5) / PI   
+float pi_bot5  = c4_ath
+
+// แสดงผล Pi Bottom เฉพาะ BTC
+if barstate.islast and show_pi_bottom and is_btc
+    int start_line_time = ath_time_c2 > 0 ? ath_time_c2 : t_bot4
+    line.new(start_line_time, pi_bot5, t_bot5 + f_days(180), pi_bot5, xloc=xloc.bar_time, color=color.new(#ff6d00, 50), style=line.style_dashed, width=1)
+
+// ==========================================
+// 4. Green RSI Zones + Bottom Signal
+// ==========================================
+// คำนวณค่า RSI
+RSI_Value = ta.rsi(close, RSI_Length)
+
+// ตรรกะวาดกล่องโซนสีเขียวของ RSI (Oversold)
+var float Zone_High    = na
+var float Zone_Low     = na
+var int Zone_Start_Bar = na
+var bool In_Zone       = false
+
+if RSI_Value < RSI_Lower_Level
+    if not In_Zone
+        In_Zone        := true
+        Zone_High      := high
+        Zone_Low       := low
+        Zone_Start_Bar := bar_index
+
+    Zone_High := math.max(Zone_High, high)
+    Zone_Low  := math.min(Zone_Low, low)
+
+if RSI_Value >= RSI_Lower_Level and In_Zone
+    box.new(
+         left         = Zone_Start_Bar,
+         right        = bar_index,
+         top          = Zone_High,
+         bottom       = Zone_Low,
+         border_color = Zone_Color,
+         border_width = 2,
+         bgcolor      = color.new(Zone_Color, 85)
+     )
+
+    In_Zone        := false
+    Zone_High      := na
+    Zone_Low       := na
+    Zone_Start_Bar := na
+
+// ตรรกะสำหรับสัญญาณ BOTTOM
+Bottom_Signal = ta.crossunder(RSI_Value, RSI_Lower_Level)
+
+plotshape(
+     Bottom_Signal,
+     title     = "BOTTOM",
+     style     = shape.arrowup,
+     location  = location.belowbar,
+     color     = color.lime,
+     text      = "BOTTOM",
+     textcolor = color.lime,
+     size      = size.small
+ )
+
+// ==========================================
+// 5. GLI 13W Forecast (Clear Range)
+// ==========================================
+// 5.1 INPUTS (การตั้งค่า)
+gli_group = "GLI 13W Forecast"
+gliTicker = input.symbol("FRED:WALCL", "🌐 แหล่งข้อมูลสภาพคล่อง (Proxy)", group=gli_group)
+leadTime  = input.int(13, "🔮 ระยะเวลาพยากรณ์ล่วงหน้า (สัปดาห์)", minval=1, maxval=52, group=gli_group)
+rocLength = input.int(13, "📊 มองย้อนหลังโมเมนตัม (สัปดาห์)", minval=1, group=gli_group)
+showTable = input.bool(true, "📌 แสดงตารางพยากรณ์ GLI", group=gli_group)
+showBg    = input.bool(true, "🎨 แสดงสีพื้นหลังแนวโน้ม GLI", group=gli_group)
+
+// 5.2 CALCULATIONS (คำนวณสภาพคล่อง)
+gliRaw = request.security(gliTicker, "W", close[1], lookahead=barmerge.lookahead_on)
+gli    = nz(gliRaw, close)
+
+// คำนวณ % การเปลี่ยนแปลง 13 สัปดาห์ (GLI ROC)
+gliPast = gli[rocLength]
+gliROC  = not na(gliPast) and gliPast != 0 ? ((gli - gliPast) / gliPast) * 100 : 0.0
+
+isBullish = gliROC > 0
+
+// 5.3 DATE CALCULATION (คำนวณวันอนาคตอีก 13 สัปดาห์)
+futureTime = time + int(leadTime * 7 * 86400000.0)
+fDay       = dayofmonth(futureTime, syminfo.timezone)
+fMonth     = month(futureTime, syminfo.timezone)
+
+dayPeriod = fDay <= 10 ? "ต้นเดือน" : (fDay <= 20 ? "กลางเดือน" : "ปลายเดือน")
+
+monthThai = switch fMonth
+    1  => "ม.ค."
+    2  => "ก.พ."
+    3  => "มี.ค."
+    4  => "เม.ย."
+    5  => "พ.ค."
+    6  => "มิ.ย."
+    7  => "ก.ค."
+    8  => "ส.ค."
+    9  => "ก.ย."
+    10 => "ต.ค."
+    11 => "พ.ย."
+    12 => "ธ.ค."
+    => ""
+
+targetStr = dayPeriod + " " + monthThai
+
+// 5.4 BACKGROUND (แสดงสีพื้นหลังแนวโน้ม)
+gliBgColor = isBullish ? color.new(color.green, 93) : color.new(color.red, 93)
+bgcolor(showBg ? gliBgColor : na, title="GLI Forecast Background")
+
+// 5.5 TABLE (ตารางแสดงผลระบุเดือนเป้าหมาย)
+var table panel = table.new(position.top_right, 2, 1, border_width=1, border_color=color.gray)
+
+if barstate.islast and showTable
+    trendStatus   = isBullish ? "🟢 ขาขึ้น" : "🔴 ขาลง"
+    forecastText  = "ตอนนี้เป็น " + trendStatus + " ถึง " + targetStr
+    forecastColor = isBullish ? color.lime : color.red
+
+    table.cell(panel, 0, 0, "ผลพยากรณ์", text_color=color.white, bgcolor=color.new(color.gray, 80), text_size=size.small)
+    table.cell(panel, 1, 0, forecastText, text_color=forecastColor, bgcolor=color.new(color.black, 50), text_size=size.small)
+
+// ==========================================
+// 6. AI Predictive Flow (Bull Only - Zeiierman)
+// ==========================================
+// ~~ Fixed Parameters {
+ai_len       = 10
+ai_mem       = 20
+ai_k         = 5
+ai_smth      = 5
+ai_sigLn     = 5
+
+bullMkCol = color.rgb(175, 255, 105)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Fixed internals {
+momLn = 5
+rsiLn = 14
+emaLn = 14
+fLen  = 10
+sLen  = 30
+oscLn = 3
+ahead = 2
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Storage {
+var Y  = array.new<float>()
+var M1 = matrix.new<float>()
+var M2 = matrix.new<float>()
+var M3 = matrix.new<float>()
+var M4 = matrix.new<float>()
+
+var matrix<float> F1 = matrix.new<float>()
+var matrix<float> F2 = matrix.new<float>()
+var matrix<float> F3 = matrix.new<float>()
+var matrix<float> F4 = matrix.new<float>()
+
+var array<float> ds = array.new<float>()
+
+var float pred     = na
+var float predSm   = na
+var float y        = na
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Base {
+base = ta.ema(close, emaLn)
+tot  = ai_len + ahead
+enough = bar_index > (tot + math.max(momLn, sLen) + ahead + 5)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Feature function {
+feat(shift, mode) =>
+    c  = close[shift]
+    c1 = close[shift + 1]
+    cm = close[shift + momLn]
+    ef = ta.ema(close, fLen)[shift]
+    es = ta.ema(close, sLen)[shift]
+    r  = ta.rsi(close, rsiLn)[shift]
+
+    float v = 0.0
+    if mode == 1
+        v := c1 != 0 ? math.log(c / c1) : 0.0
+    else if mode == 2
+        v := cm != 0 ? (c - cm) / cm : 0.0
+    else if mode == 3
+        v := (r - 50.0) / 50.0
+    else
+        v := c != 0 ? (ef - es) / c : 0.0
+    v
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Build feature history {
+pushFeat(mat, mode) =>
+    vals = array.new<float>(tot, 0.0)
+
+    for i = 0 to tot - 1
+        array.set(vals, tot - 1 - i, feat(i, mode))
+
+    cur = array.slice(vals, tot - ai_len, tot)
+    old = array.slice(vals, 0, ai_len)
+
+    matrix<float> out = matrix.new<float>(1, ai_len, 0.0)
+    for i = 0 to ai_len - 1
+        matrix.set(out, 0, i, array.get(cur, i))
+
+    hist = array.new<float>(ai_len, 0.0)
+    for i = 0 to ai_len - 1
+        array.set(hist, i, array.get(old, i))
+
+    if mat.rows() >= ai_mem
+        mat.remove_row(0)
+
+    mat.add_row(mat.rows(), hist)
+
+    out
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Distance calc {
+getDist(matrix<float> a1, matrix<float> a2, matrix<float> a3, matrix<float> a4, matrix<float> b1, matrix<float> b2, matrix<float> b3, matrix<float> b4) =>
+    out = array.new<float>(b1.rows(), 0.0)
+
+    for i = 0 to b1.rows() - 1
+        s = 0.0
+        d1 = a1.diff(b1.submatrix(i, i + 1)).row(0)
+        d2 = a2.diff(b2.submatrix(i, i + 1)).row(0)
+        d3 = a3.diff(b3.submatrix(i, i + 1)).row(0)
+        d4 = a4.diff(b4.submatrix(i, i + 1)).row(0)
+
+        for j = 0 to ai_len - 1
+            s += math.pow(d1.get(j), 2) * 0.25 +
+                 math.pow(d2.get(j), 2) * 0.25 +
+                 math.pow(d3.get(j), 2) * 0.25 +
+                 math.pow(d4.get(j), 2) * 0.25
+
+        out.set(i, math.sqrt(s))
+
+    out
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ kNN {
+knn(dist, n) =>
+    ix = dist.sort_indices()
+    useN = math.min(n, ix.size())
+    sumD = 0.0
+    avg  = 0.0
+
+    for i = 0 to useN - 1
+        sumD += dist.get(ix.get(i))
+
+    if useN > 0
+        for i = 0 to useN - 1
+            d = dist.get(ix.get(i))
+            w = useN > 1 ? (sumD != 0 ? (1 - d / sumD) : 1.0) : 1.0
+            avg += Y.get(ix.get(i)) * w
+
+    avg
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Main {
+if barstate.isconfirmed and enough
+    y := math.log(base) - math.log(base[ahead])
+
+    F1 := pushFeat(M1, 1)
+    F2 := pushFeat(M2, 2)
+    F3 := pushFeat(M3, 3)
+    F4 := pushFeat(M4, 4)
+
+    if Y.size() >= ai_mem
+        Y.shift()
+    Y.push(y)
+
+    ds := getDist(F1, F2, F3, F4, M1, M2, M3, M4)
+    pred := knn(ds, ai_k)
+
+pred_ = ta.ema(pred, ai_smth)
+
+if not na(pred)
+    predSm := ai_smth > 1 ? pred_ : pred
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
+
+// ~~ Oscillator & Signal Calculation {
+osc = ta.ema(predSm, oscLn)
+sig = ta.ema(osc, ai_sigLn)
+bull = ta.crossover(osc, sig) and sig >= 0
+
+// ~~ Plots {
+plotshape(bull, title = "AI Predictive Flow Bull", style = shape.triangleup, location = location.belowbar, color = bullMkCol, size = size.tiny)
+//~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~}
